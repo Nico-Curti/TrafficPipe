@@ -1,3 +1,5 @@
+#include "classifier.hpp"
+#include "score_coef.hpp"
 #include "parse_args.hpp"
 
 void parse_args(int argc, char *argv[], 
