@@ -32,6 +32,7 @@ elif platform.system() == "Linux" or platform.system()[:6] == "CYGWIN":
 db_dir          =   config["folders"]["data"]
 plot_dir        =   config["folders"]["plot"]
 train_dir       =   config["folders"]["train"]
+test_dir        =   config["folders"]["test"]
 param_dir       =   config["folders"]["param"]
 db_name         =   config["filename"]
 coils           =   list(config["coil"])
@@ -40,6 +41,11 @@ Nit             =   int(config["Nit"])
 K               =   int(config["K"])
 fbp_train       =   os.path.join(local, "bin", config["softwares"]["train"] + extension)
 fbp_test        =   os.path.join(local, "bin", config["softwares"]["test"] + extension)
+
+max_iter        =   int(config["max_iter"])
+n_population    =   int(config["n_population"])
+elit_rate       =   float(config["elit_rate"])
+mutation_rate   =   float(config["mutation_rate"])
 
 nth_bin_db      =   int(config["NTH_binarization"])
 nth_train       =   int(config["NTH_gentrain"])
@@ -53,8 +59,12 @@ upper_time      =    '22.00.01'
 Ncar            =    100
 
 with(suppress(OSError)):
+    os.makedirs(os.path.join(local, "log"))
+    os.makedirs(os.path.join(local, param_dir))
+    os.makedirs(os.path.join(local, "tex", plot_dir))
     for coil in coils:
         os.makedirs(os.path.join(local, train_dir, "train_" + coil))
+        os.makedirs(os.path.join(local, train_dir, "test_" + coil))
 
 
 rule all:
@@ -157,7 +167,11 @@ rule generate_fold:
     output:
         train    = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
                                         "{{coil}}_n_{{n}}_{{fold}}_{train}.csv"),
-                                         train=map(str, range(K))
+                                         train=list(map(str, range(K)))
+                         ),
+        test    = expand(os.path.join(local, db_dir, train_dir, "test_{{coil}}"
+                                        "{{coil}}_n_{{n}}_{{fold}}_{train}.csv"),
+                                         train=list(map(str, range(K)))
                          ),
     benchmark:
         os.path.join("benchmark", "benchmark_generate_folds_{coil}_{n}_{fold}.dat")
@@ -169,28 +183,26 @@ rule generate_fold:
         db  = pd.read_csv(input.datafile, sep=",", names=["day", "way", "lbl", "train"], header=None, engine='python')
         lbl = list(db["lbl"])
         cv  = StratifiedKFold(n_splits = K, shuffle = True, random_state = int("{fold}")) # K-Fold cross validation
-        for train_index, _ in cv.split(np.zeros(len(lbl)), lbl):
+        for train_index, test_index in cv.split(np.zeros(len(lbl)), lbl):
+            # TO FIX
             tmp         = db.iloc[:, train_index]
             tmp.columns = lbl[train_index]
             tmp.to_csv(output.train, header = False, index = False, sep = ",", mode = "w")
 
+            tmp         = db.iloc[:, test_index]
+            tmp.columns = lbl[test_index]
+            tmp.to_csv(output.test, header = False, index = False, sep = ",", mode = "w")
+
 rule run_fbp:
     input: 
         exe = fbp_train,
-        datafile = expand(os.path.join(local, db_dir, train_dir, "train_{coil}"
-                                        "{coil}_n_{n}_{fold}_{train}.csv"),
-                                        coil=coils, 
-                                        n=n_input, 
-                                        fold=map(str, range(Nit)), 
-                                        train=map(str, range(K)) 
-                         ), # suppress expand for hybrid-parallel computation
+        datafile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
+                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+                                        fold = list(map(str, range(Nit))),
+                                        train = list(map(str, range(K)))
+                                        )
     output:
-        parameters = expand(os.path.join(local, param_dir, "params_{coil}_n_{n}_{fold}_{train}.csv"), 
-                            coil=coils, 
-                            n=n_input, 
-                            fold=map(str, range(Nit)), 
-                            train=map(str, range(K))
-                            ), # suppress expand for hybrid-parallel computation
+        parameters = os.path.join(local, param_dir, "params_{coil}_n_{n}.csv"),
     benchmark:
         os.path.join("benchmark", "benchmark_fbp_train_{coil}_{n}_{fold}_{train}.dat")
     threads:
@@ -198,30 +210,47 @@ rule run_fbp:
     message:
         "FBP with GA for {wildcards.coil} : {wildcards.n} : {wildcards.fold} : {wildcards.train}"
     run:
-        for file, out in zip(input.datafile, output.parameters):
-            os.system("{input.exe} ....")
+        for file in input.datafile:
+            os.system(' '.join(["{input.exe}", 
+                                "-f", file, 
+                                "-o", "{output.parameters}", 
+                                "-k", "10", 
+                                "-r", "123", 
+                                "-i", str(max_iter), 
+                                "-n", str(n_population), 
+                                "-e", str(elit_rate), 
+                                "-m", str(mutation_rate)
+                                ])
+                        )
 
 rule validation:
     input:
         exe = fbp_test,
-        parameters = expand(os.path.join(local, param_dir, "params_{coil}_n_{n}_{fold}_{train}.csv"), 
-                            coil=coils, 
-                            n=n_input, 
-                            fold=map(str, range(Nit)), 
-                            train=map(str, range(K))
-                            ), # suppress expand for hybrid-parallel computation
+        parameters = os.path.join(local, param_dir, "params_{coil}_n_{n}.csv"),
+        trainfile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
+                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+                                        fold = list(map(str, range(Nit))),
+                                        train = list(map(str, range(K)))
+                                        )
+        testfile = expand(os.path.join(local, db_dir, test_dir, "test_{{coil}}"
+                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+                                        fold = list(map(str, range(Nit))),
+                                        train = list(map(str, range(K)))
+                                        ),
     output:
-        results = expand(os.path.join(local, db_dir, "results_{coil}_n_{n}.csv"),
-                        coil=coils, 
-                        n=n_input, 
-                        ),
+        results = os.path.join(local, db_dir, "results_{coil}_n_{n}.csv"),
     benchmark:
-        os.path.join("benchmark", "benchmark_fbp_test_{coil}_{n}_{fold}_{train}.dat")
+        os.path.join("benchmark", "benchmark_fbp_test_{coil}_{n}.dat")
     threads:
         nth_fbp_test
     message:
-        "FBP validation for {wildcards.coil} : {wildcards.n} : {wildcards.fold} : {wildcards.train}"
+        "FBP validation for {wildcards.coil} : {wildcards.n}"
     run:
-        for param, out in zip(input.parameters, output.results):
-            os.system("{input.exe} ....")
-            # make sure that exec validation append results to existing file!!!
+        for train, test in zip(input.trainfile, input.testfile):
+            os.system(' '.join(["{input.exe}", 
+                                "-f", train, 
+                                "-t", test,
+                                "-o", "{output.results}", 
+                                "-p", "{input.parameters}"
+                                ])
+                        )

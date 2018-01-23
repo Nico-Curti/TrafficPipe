@@ -11,10 +11,15 @@ NTH_fbp_test: '1'
 folders:
   #scripts: 'python'
   train: 'train'
+  test: 'test'
   param: 'params'
   plot: '/tex/img'
   data: 'db'
 
+max_iter: '1000'
+n_population: '100'
+elit_rate: '.3'
+mutation_rate: '.5'
 
 softwares: 
   train: 'fbp_ga'

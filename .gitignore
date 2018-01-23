@@ -71,7 +71,9 @@ bld/
 benchmark/
 db/
 train/
+test/
 params/
+log/
 
 # Build tex
 *.aux
