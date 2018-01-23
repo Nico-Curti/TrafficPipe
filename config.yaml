@@ -1,0 +1,33 @@
+
+n_cpu: '1'
+
+NTH_binarization: '1'
+NTH_gentrain: '1'
+NTH_select: '1'
+NTH_gen_folds: '1'
+NTH_fbp_train: '1'
+NTH_fbp_test: '1'
+
+folders:
+  #scripts: 'python'
+  train: 'train'
+  param: 'params'
+  plot: '/tex/img'
+  data: 'db'
+
+
+softwares: 
+  train: 'fbp_ga'
+  test: 'fb_val'
+filename: 'FilterFile'
+
+K: '10'
+Nit: '100'
+coil:
+  - '122'
+n_input:
+  - '101'
+  - '151'
+  - '201'
+  - '251'
+  - '301'
