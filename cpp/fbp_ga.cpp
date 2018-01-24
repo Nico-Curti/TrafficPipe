@@ -8,7 +8,7 @@ void parse_args(int argc, char *argv[],
 				int &max_iter,
 				int &n_population,
 				float &elit_rate,
-				float &mutation_rate
+				float &mutation_rate,
 				unsigned int &seed
 				)
 {
@@ -31,8 +31,8 @@ void parse_args(int argc, char *argv[],
 	argparse.get<int>("rArg", seed);
 	argparse.get<int>("iArg", max_iter);
 	argparse.get<int>("nArg", n_population);
-	argparse.get<T>("eArg", elit_rate);
-	argparse.get<T>("mArg", mutation_rate);
+	argparse.get<float>("eArg", elit_rate);
+	argparse.get<float>("mArg", mutation_rate);
 	
 	return;
 }
@@ -42,8 +42,8 @@ int main(int argc, char **argv)
 	int	K, // number of folds
 		n_population,// number of dna in each generation
 		max_iter,// max number of iteration in the GA
-		nth; // number of thread
-	unsigned int seed; // random seed
+		nth, // number of thread
+		seed; // random seed
 	float	elit_rate, // percentage of population to conserve
 			mutation_rate; // probability of mutation
 	std::string patternsfile, // input filename
@@ -70,12 +70,12 @@ int main(int argc, char **argv)
 																	elit_rate,
 																	mutation_rate,
 																	K,
-																	seed,
+																	(unsigned int)seed,
 																	nth, // number of thread to use for parallel GA
 																	false,
 																	genetic_out);
 
-	std::ostream os(output, std::ios_base::app);
+	std::ofstream os(output, std::ios_base::app);
 	os << patternsfile.substr(0, patternsfile.find_first_of(".") - 1) << "\t" << best_params << std::endl;
 	os.close();
 	

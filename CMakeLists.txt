@@ -73,7 +73,7 @@ endforeach( OUTPUTCONFIG CMAKE_CONFIGURATION_TYPES )
 
 project (traffic)
 enable_language (CXX)
-set (CMAKE_CXX_STANDARD 11)
+set (CMAKE_CXX_STANDARD 14)
 set (SRC_DIR ${CMAKE_SOURCE_DIR}/cpp)
 set (HPP_DIR ${CMAKE_SOURCE_DIR}/cpp/Data-Analysis/lib) # directory of hpp
 include_directories(${SRC_DIR})
