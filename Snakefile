@@ -12,6 +12,7 @@ import platform # check system
 import datetime # date and time variables
 from contextlib import suppress # makedir with no error 
 from sklearn.model_selection import StratifiedKFold # RepeatedStratifiedKFold
+from tpot import TPOTClassifier # genetic pipeline
 
 # plots of results
 import seaborn as sns # pretty/easy plots with pandas
@@ -30,6 +31,7 @@ elif platform.system() == "Linux" or platform.system()[:6] == "CYGWIN":
     extension   =   ""
 
 db_dir          =   config["folders"]["data"]
+scripts         =   config["folders"]["scripts"]
 plot_dir        =   config["folders"]["plot"]
 train_dir       =   config["folders"]["train"]
 test_dir        =   config["folders"]["test"]
@@ -62,6 +64,7 @@ with(suppress(OSError)):
     os.makedirs(os.path.join(local, "log"))
     os.makedirs(os.path.join(local, param_dir))
     os.makedirs(os.path.join(local, "tex", plot_dir))
+    os.makedirs(os.path.join(local, scripts))
     for coil in coils:
         os.makedirs(os.path.join(local, train_dir, "train_" + coil))
         os.makedirs(os.path.join(local, train_dir, "test_" + coil))
@@ -238,7 +241,7 @@ rule validation:
                                         train = list(map(str, range(K)))
                                         ),
     output:
-        results = os.path.join(local, db_dir, "results_{coil}_n_{n}.csv"),
+        results = os.path.join(local, db_dir, "FBPresults_{coil}_n_{n}.csv"),
     benchmark:
         os.path.join("benchmark", "benchmark_fbp_test_{coil}_{n}.dat")
     threads:
@@ -254,3 +257,85 @@ rule validation:
                                 "-p", "{input.parameters}"
                                 ])
                         )
+
+
+rule tpot:
+    input:
+        trainfile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
+                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+                                        fold = list(map(str, range(Nit))),
+                                        train = list(map(str, range(K)))
+                                        )
+        testfile = expand(os.path.join(local, db_dir, test_dir, "test_{{coil}}"
+                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+                                        fold = list(map(str, range(Nit))),
+                                        train = list(map(str, range(K)))
+                                        ),
+    output:
+        results = os.path.join(local, db_dir, "TPOTresults_{coil}_n_{n}.csv")
+    benchmark:
+        os.path.join("benchmark", "benchmark_tpot_{coil}_{n}.dat")
+    threads:
+        nth_tpot
+    message:
+        "TPOT pipeline for {wildcards.coil} : {wildcards.n}"
+    run:
+        tpot = TPOTClassifier(generations=max_iter, population_size=n_population, verbosity=0)
+        with open(output.results, "w") as f:
+            f.write("mcc\taccuracy")
+            for train, test in zip(input.trainfile, input.testfile):
+                train_data = pd.read_csv(train, sep=",", header=None)
+                test_data = pd.read_csv(test, sep=",", header=None)
+                train_lbl = list(train_data.columns)
+                test_lbl = list(test_data.columns)
+                tpot.fit(train_data, train_lbl)
+                lbl_predict = tpot.predict(test_data)
+                mcc = matthews_corrcoef(test_lbl, lbl_predict)
+                acc = accuracy_score(test_lbl, lbl_predict, normalize=True)
+                tpot.export(os.path.join(local, scripts, "tpot_" + test.split(os.sep)[-1].split(".")[0] + "_pipeline.py"))
+
+                f.write("%.3f\t%.3f\n"%(mcc, acc))
+
+
+rule boxplots:
+    input:
+        fbp_res = expand(os.path.join(local, db_dir, "FBPresults_{coil}_n_{n}.csv"), coil=coils, n=n_input),
+        tpot_res = expand(os.path.join(local, db_dir, "TPOTresults_{coil}_n_{n}.csv"), coil=coils, n=n_input),
+    output:
+        mcc_box = os.path.join(local, plot_dir, "boxplot_mcc.png"),
+        acc_box = os.path.join(local, plot_dir, "boxplot_acc.png")
+    benchmark:
+        os.path.join("benchmark", "benchmark_boxplots.dat")
+    message: 
+        "Boxplots of results"
+    run:
+        fbp_db = pd.read_csv(input.fbp_res, sep="\t", header=None, names=["mcc", "accuracy"])
+        tpot_db = pd.read_csv(input.tpot_res, sep="\t", header=1, names=["mcc", "accuracy"])
+        palette = "hls"
+        
+
+        fig, ax = plt.subplots(figsize=(16,8))
+        plt.subplots_adjust(left=0.15, right=0.9, top=0.8,  bottom=0.2)
+        sns.boxplot( x = "cancer", 
+                     y = "mcc", 
+                     hue = "dtype",
+                     data = db, 
+                     palette = palette, 
+                     ax = ax,
+                     notch = True,
+                     saturation = .9,
+                     linewidth = 3)
+        
+        ax.hlines(.5, -0.5, len(params.cancer)*len(params.dtype), colors='r', linestyle='dashed', linewidth=4)
+        ax.set_xlim(-0.5, len(params.cancer)-.5)
+        ax.set_ylim(0, 1)
+        ax.set_ylabel("AUC (Area Under the Curve)", fontsize=14)
+        ax.set_xlabel("Cancer", fontsize=14)
+        ax.set_xticklabels(params.cancer, rotation = 0, fontsize = 14)
+        ax.set_yticklabels(np.arange(0, 1.1, .2), rotation = 0, fontsize = 14)
+        for i,c in enumerate(params.cancer):
+            ax.vlines(len(params.dtype)*.5*i-.5, 0, 1, color ='k', linestyle="dashed", linewidth=1.5)
+        
+        labels = [mpatches.Patch(color = color, label = t) for color, t in zip(sns.color_palette(palette, len(params.dtype)) , params.dtype)]
+        plt.legend(handles=labels, fontsize=14, loc='lower left', prop={'weight' : 'semibold', 'size':14})
+        plt.savefig(output.out)

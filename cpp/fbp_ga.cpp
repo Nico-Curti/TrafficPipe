@@ -72,7 +72,7 @@ int main(int argc, char **argv)
 																	K,
 																	(unsigned int)seed,
 																	nth, // number of thread to use for parallel GA
-																	false,
+																	true,
 																	genetic_out);
 
 	std::ofstream os(output, std::ios_base::app);

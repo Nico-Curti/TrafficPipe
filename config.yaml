@@ -9,7 +9,7 @@ NTH_fbp_train: '1'
 NTH_fbp_test: '1'
 
 folders:
-  #scripts: 'python'
+  scripts: 'python'
   train: 'train'
   test: 'test'
   param: 'params'

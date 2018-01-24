@@ -74,6 +74,7 @@ train/
 test/
 params/
 log/
+python/
 
 # Build tex
 *.aux
