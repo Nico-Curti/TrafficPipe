@@ -212,7 +212,7 @@ rule generate_fold:
                                         "{{coil}}_n_{{n}}_{{fold}}_{train}.csv"),
                                          train=list(map(str, range(K)))
                          ),
-        test    = expand(os.path.join(local, db_dir, train_dir, "test_{{coil}}",
+        test    = expand(os.path.join(local, db_dir, test_dir, "test_{{coil}}",
                                         "{{coil}}_n_{{n}}_{{fold}}_{train}.csv"),
                                          train=list(map(str, range(K)))
                          ),
@@ -224,20 +224,20 @@ rule generate_fold:
         "Generation of folds file for {wildcards.coil} : {wildcards.n} : {wildcards.fold}"
     run:
         db = pd.read_csv(input.datafile, sep=",", index_col=0)
-        lbl = list(map(int, map(float, db.columns)))
+        lbl = np.asarray(list(map(int, map(float, db.columns))))
         cv  = StratifiedKFold(n_splits = K, shuffle = True, random_state = int(wildcards.fold)) # K-Fold cross validation
-        for train_index, test_index in cv.split(np.zeros(len(lbl)), lbl):
+        for train, test, (train_index, test_index) in zip(output.train, output.test, cv.split(np.zeros(len(lbl)), lbl)):
             tmp         = db.iloc[train_index].dropna(how="all", axis=1)
             lbl_train = lbl[train_index]
-            with open(output.train, "a") as f:
+            with open(train, "a") as f:
                 f.write("%s\t%s\n"%('\t'.join(map(str, lbl_train[:-1])), str(lbl_train[-1])))
-                tmp.to_csv(output.train, sep="\t", header=False, index=False)
+                tmp.to_csv(train, sep="\t", header=False, index=False)
 
             tmp         = db.iloc[test_index].dropna(how="all", axis=1)
             lbl_test = lbl[test_index]
-            with open(output.test, "a") as f:
+            with open(test, "a") as f:
                 f.write("%s\t%s\n"%('\t'.join(map(str, lbl_test[:-1])), str(lbl_test[-1])))
-                tmp.to_csv(output.test, sep="\t", header=False, index=False)
+                tmp.to_csv(test, sep="\t", header=False, index=False)
 
 
 rule run_fbp:
