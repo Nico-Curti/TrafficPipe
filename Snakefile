@@ -12,7 +12,7 @@ import platform # check system
 import datetime # date and time variables
 from contextlib import suppress # makedir with no error 
 from sklearn.model_selection import StratifiedKFold # RepeatedStratifiedKFold
-from tpot import TPOTClassifier # genetic pipeline
+#from tpot import TPOTClassifier # genetic pipeline
 
 # plots of results
 import seaborn as sns # pretty/easy plots with pandas
@@ -38,7 +38,7 @@ test_dir        =   config["folders"]["test"]
 param_dir       =   config["folders"]["param"]
 db_name         =   config["filename"]
 coils           =   list(config["coil"])
-n_input         =   list(map(int, list(config["n_input"])))
+n_input         =   list(config["n_input"])
 Nit             =   int(config["Nit"])
 K               =   int(config["K"])
 fbp_train       =   os.path.join(local, "bin", config["softwares"]["train"] + extension)
@@ -59,6 +59,11 @@ nth_fbp_test    =   int(config["NTH_fbp_test"])
 lower_time      =    '05.59.59'
 upper_time      =    '22.00.01'
 Ncar            =    100
+wd              = [[1,7,8], [14,15,21,22,28,29]]
+weekend = sum([ ["0%d/05/2011"%i for i in wd[0]], ["%d/05/2011"%i for i in wd[1]] ], [])
+weekdays = sum([ ["0%d/05/2011"%i for i in range(1, 10) if i not in wd[0]], ["%d/05/2011"%i for i in range(10, 32) if i not in wd[1]] ], [])
+
+
 
 with(suppress(OSError)):
     os.makedirs(os.path.join(local, "log"))
@@ -67,15 +72,35 @@ with(suppress(OSError)):
     os.makedirs(os.path.join(local, scripts))
     for coil in coils:
         os.makedirs(os.path.join(local, train_dir, "train_" + coil))
-        os.makedirs(os.path.join(local, train_dir, "test_" + coil))
+        os.makedirs(os.path.join(local, test_dir, "test_" + coil))
 
 
 rule all:
     input:
-        results = expand(os.path.join(local, db_dir, "results_{coil}_n_{n}.csv"),
-                        coil=coils, 
-                        n=n_input, 
+        train    = expand(os.path.join(local, db_dir, train_dir, "train_{coil}",
+                                        "{coil}_n_{n}_{fold}_{train}.csv"),
+                                         train=list(map(str, range(K))),
+                                         coil=coils,
+                                         n=n_input,
+                                         fold=list(map(str, range(Nit)))
                         ),
+
+                    
+        test    = expand(os.path.join(local, db_dir, test_dir, "test_{coil}",
+                                        "{coil}_n_{n}_{fold}_{train}.csv"),
+                                         train=list(map(str, range(K))),
+                                         coil=coils,
+                                         n=n_input,
+                                         fold=list(map(str, range(Nit)))
+                         ),
+        #files    = expand([os.path.join(local, db_dir, db_name + "{coil}_n_{n}.weekdays"), os.path.join(local, db_dir, db_name + "{coil}_n_{n}.weekend")], coil=coils, n=n_input),
+        #train_db = expand(os.path.join(local, db_dir, db_name + "{coil}_n_{n}.train"), coil = coils, n = n_input),
+        #bin_db = expand(os.path.join(local, db_dir, db_name + "{coil}.binary"), coil=coils),
+        #results = expand(os.path.join(local, db_dir, "results_{coil}_n_{n}.csv"),
+        #                coil=coils, 
+        #                n=n_input, 
+        #                ),
+
 
 
 rule binarize_db:
@@ -108,6 +133,8 @@ rule binarize_db:
         ways = list(pd.unique(data.way))
         
         ways = (data.groupby(data.way, sort=False))
+        result = dict()
+
         for way, db in ways:
             days = (db.groupby(db.days, sort=False))  
             for day, tmp_db in days:  
@@ -124,12 +151,15 @@ rule generate_train:
         bin_db = os.path.join(local, db_dir, db_name + "{coil}.binary"),
     output:
         train_db = os.path.join(local, db_dir, db_name + "{coil}_n_{n}.train"),
+
     benchmark:
         os.path.join("benchmark", "benchmark_train_db_{coil}.dat")
     threads:
         nth_train
     message:
         "Generation of training db for coil {wildcards.coil} with n = {wildcards.n}"
+    params:
+        n_input = "{n}", 
     run:
         data = pd.read_csv(input.bin_db, 
                            sep=',',
@@ -138,11 +168,10 @@ rule generate_train:
                            names=["day-way", "bin"]
                            )
         train = []
-        n_input = int({n})
         for key, row in data.iterrows():
             binary = list(map(int, row["bin"].split(";")))
-            size = int(len(binary)/n_input)
-            binary = np.reshape(binary[:n_input*size], (size, n_input))
+            size = int(len(binary)/(int(params.n_input)))
+            binary = np.reshape(binary[:int(params.n_input)*size], (size, int(params.n_input)))
             lbl = 2*(np.sum(np.roll(binary, 1, axis=0), 1) > 0)-1
             for b, t in zip(lbl, binary):
                 train.append(sum([row['day-way'].split(","), [str(b), ';'.join(map(str, t))]], []))
@@ -153,8 +182,7 @@ rule select_data:
     input:
         train_db   = os.path.join(local, db_dir, db_name + "{coil}_n_{n}.train"),
     output:
-        week_db    = os.path.join(local, db_dir, db_name + "{coil}_n_{n}.week"),
-        weekend_db = os.path.join(local, db_dir, db_name + "{coil}_n_{n}.weekend"),
+        files    = [os.path.join(local, db_dir, db_name + "{coil}_n_{n}.weekdays"), os.path.join(local, db_dir, db_name + "{coil}_n_{n}.weekend")],
     benchmark:
         os.path.join("benchmark", "benchmark_select_db_{coil}.dat")
     threads:
@@ -162,17 +190,29 @@ rule select_data:
     message:
         "Select data from db {wildcards.coil} with n = {wildcards.n}"
     run:
-        print("MISS!!!!!!!!!!!!!!!!!!!!")
+        db = pd.read_csv(input.train_db, sep=',', engine='python', header=None, names=['day', 'way', 'label', 'train'])
+        db[list(range(0,len(db['train'][0].split(';'))))] = db['train'].str.split(';', expand = True)
+        db = db.drop(['train'], axis = 1)
+        
+        for types, outfile in zip([weekdays, weekend], output.files):
+            tmp = db[db.day.isin(types)]
+            tmp.index = [';'.join([str(d),str(w)]) for d,w in zip(tmp.day, tmp.way)]
+            lbl = list(tmp.label)
+            tmp = tmp.drop(["day", "way", "label"], axis=1)
+            with open(outfile, "a") as out:
+                out.write(",%s,%d\n"%(','.join(map(str, lbl[:-1])), lbl[-1]))
+                tmp.to_csv(out, sep=',',header=False, index=True)
+
 
 rule generate_fold:
     input:
-        datafile = os.path.join(local, db_dir, db_name + "{coil}_n_{n}.week"),
+        datafile = os.path.join(local, db_dir, db_name + "{coil}_n_{n}.weekdays"),
     output:
-        train    = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
+        train    = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}",
                                         "{{coil}}_n_{{n}}_{{fold}}_{train}.csv"),
                                          train=list(map(str, range(K)))
                          ),
-        test    = expand(os.path.join(local, db_dir, train_dir, "test_{{coil}}"
+        test    = expand(os.path.join(local, db_dir, train_dir, "test_{{coil}}",
                                         "{{coil}}_n_{{n}}_{{fold}}_{train}.csv"),
                                          train=list(map(str, range(K)))
                          ),
@@ -183,18 +223,22 @@ rule generate_fold:
     message:
         "Generation of folds file for {wildcards.coil} : {wildcards.n} : {wildcards.fold}"
     run:
-        db  = pd.read_csv(input.datafile, sep=",", names=["day", "way", "lbl", "train"], header=None, engine='python')
-        lbl = list(db["lbl"])
-        cv  = StratifiedKFold(n_splits = K, shuffle = True, random_state = int("{fold}")) # K-Fold cross validation
+        db = pd.read_csv(input.datafile, sep=",", index_col=0)
+        lbl = list(map(int, map(float, db.columns)))
+        cv  = StratifiedKFold(n_splits = K, shuffle = True, random_state = int(wildcards.fold)) # K-Fold cross validation
         for train_index, test_index in cv.split(np.zeros(len(lbl)), lbl):
-            # TO FIX
-            tmp         = db.iloc[:, train_index]
-            tmp.columns = lbl[train_index]
-            tmp.to_csv(output.train, header = False, index = False, sep = ",", mode = "w")
+            tmp         = db.iloc[train_index].dropna(how="all", axis=1)
+            lbl_train = lbl[train_index]
+            with open(output.train, "a") as f:
+                f.write("%s\t%s\n"%('\t'.join(map(str, lbl_train[:-1])), str(lbl_train[-1])))
+                tmp.to_csv(output.train, sep="\t", header=False, index=False)
 
-            tmp         = db.iloc[:, test_index]
-            tmp.columns = lbl[test_index]
-            tmp.to_csv(output.test, header = False, index = False, sep = ",", mode = "w")
+            tmp         = db.iloc[test_index].dropna(how="all", axis=1)
+            lbl_test = lbl[test_index]
+            with open(output.test, "a") as f:
+                f.write("%s\t%s\n"%('\t'.join(map(str, lbl_test[:-1])), str(lbl_test[-1])))
+                tmp.to_csv(output.test, sep="\t", header=False, index=False)
+
 
 rule run_fbp:
     input: 
@@ -234,7 +278,7 @@ rule validation:
                                         "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
                                         fold = list(map(str, range(Nit))),
                                         train = list(map(str, range(K)))
-                                        )
+                                        ),
         testfile = expand(os.path.join(local, db_dir, test_dir, "test_{{coil}}"
                                         "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
                                         fold = list(map(str, range(Nit))),
@@ -259,42 +303,42 @@ rule validation:
                         )
 
 
-rule tpot:
-    input:
-        trainfile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
-                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
-                                        fold = list(map(str, range(Nit))),
-                                        train = list(map(str, range(K)))
-                                        )
-        testfile = expand(os.path.join(local, db_dir, test_dir, "test_{{coil}}"
-                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
-                                        fold = list(map(str, range(Nit))),
-                                        train = list(map(str, range(K)))
-                                        ),
-    output:
-        results = os.path.join(local, db_dir, "TPOTresults_{coil}_n_{n}.csv")
-    benchmark:
-        os.path.join("benchmark", "benchmark_tpot_{coil}_{n}.dat")
-    threads:
-        nth_tpot
-    message:
-        "TPOT pipeline for {wildcards.coil} : {wildcards.n}"
-    run:
-        tpot = TPOTClassifier(generations=max_iter, population_size=n_population, verbosity=0)
-        with open(output.results, "w") as f:
-            f.write("mcc\taccuracy")
-            for train, test in zip(input.trainfile, input.testfile):
-                train_data = pd.read_csv(train, sep=",", header=None)
-                test_data = pd.read_csv(test, sep=",", header=None)
-                train_lbl = list(train_data.columns)
-                test_lbl = list(test_data.columns)
-                tpot.fit(train_data, train_lbl)
-                lbl_predict = tpot.predict(test_data)
-                mcc = matthews_corrcoef(test_lbl, lbl_predict)
-                acc = accuracy_score(test_lbl, lbl_predict, normalize=True)
-                tpot.export(os.path.join(local, scripts, "tpot_" + test.split(os.sep)[-1].split(".")[0] + "_pipeline.py"))
-
-                f.write("%.3f\t%.3f\n"%(mcc, acc))
+#rule tpot:
+#    input:
+#        trainfile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
+#                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+#                                        fold = list(map(str, range(Nit))),
+#                                        train = list(map(str, range(K)))
+#                                        ),
+#        testfile = expand(os.path.join(local, db_dir, test_dir, "test_{{coil}}"
+#                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+#                                        fold = list(map(str, range(Nit))),
+#                                        train = list(map(str, range(K)))
+#                                        ),
+#    output:
+#        results = os.path.join(local, db_dir, "TPOTresults_{coil}_n_{n}.csv")
+#    benchmark:
+#        os.path.join("benchmark", "benchmark_tpot_{coil}_{n}.dat")
+#    threads:
+#        nth_tpot
+#    message:
+#        "TPOT pipeline for {wildcards.coil} : {wildcards.n}"
+#    run:
+#        tpot = TPOTClassifier(generations=max_iter, population_size=n_population, verbosity=0)
+#        with open(output.results, "w") as f:
+#            f.write("mcc\taccuracy")
+#            for train, test in zip(input.trainfile, input.testfile):
+#                train_data = pd.read_csv(train, sep=",", header=None)
+#                test_data = pd.read_csv(test, sep=",", header=None)
+#                train_lbl = list(train_data.columns)
+#                test_lbl = list(test_data.columns)
+#                tpot.fit(train_data, train_lbl)
+#                lbl_predict = tpot.predict(test_data)
+#                mcc = matthews_corrcoef(test_lbl, lbl_predict)
+#                acc = accuracy_score(test_lbl, lbl_predict, normalize=True)
+#                tpot.export(os.path.join(local, scripts, "tpot_" + test.split(os.sep)[-1].split(".")[0] + "_pipeline.py"))
+#
+#                f.write("%.3f\t%.3f\n"%(mcc, acc))
 
 
 rule boxplots:
