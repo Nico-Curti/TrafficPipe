@@ -5,53 +5,56 @@ STD = -std=c++11
 OMP = -fopenmp
 fmath = -ffast-math
 
-paper = /tex/main.tex
-
-ifeq ($(shell uname -o), Cygwin)
-    gnu = -std=gnu++11
-endif
-
 ifeq ($(OS), Windows_NT)
-	remove = del /s
-	empty = nul
+	inst = 'powershell "./install.ps1"'
+	remove = del /s 
+	empty =  nul
+	sep = \\
 else
+	inst = ./install.sh
 	remove = rm
 	empty = /dev/null
+	sep = /
 endif
 
-all: fbp_ga \
-	$(paper) \
-	$(wildcard img/**/*)
+paper_file = traffic_report.tex
+paper_out = traffic
+tex_dir = tex
 
-	latexmk -synctex=1 -bibtex -interaction=nonstopmode -file-line-error -pdf $(basename $<)
-	$(MAKE) clean
+ifeq ($(OS), Cygwin)
+    gnu = -std=gnu++14
+endif
 
-fbp_ga: $(SRC)/main.cpp \
+install: $(inst)
+	$(inst)
 
-	$(CXX) $(STD) $(gnu) $(OMP) -O3 -I $(HPP) -o fbp_ga $(SRC)/main.cpp
-
-pipeline: Snakefile
+pipeline: $(snake)
 	snakemake
 
-manual: $(paper) \
-		$(wildcard img/**/*) \
+graph_pipe: $(snake)
+	snakemake --dag | dot -Tpdf > protein_pipe.pdf
 
-	pdflatex $< 
-	-bibtex $(basename $<)
-	pdflatex $< 
-	pdflatex $< 
-	$(MAKE) cleanall
+paper: $(tex_dir)/$(paper_file) \
+	   $(wildcard $(tex_dir)/img/**/*)
+	cd $(tex_dir) && latexmk -synctex=1 -bibtex -interaction=nonstopmode -file-line-error -pdf $(basename $(paper_file)) -jobname=$(paper_out) && cd ..
+	$(MAKE) clean
+
+fbp_ga: $(SRC)/fbp_ga.cpp
+	$(CXX) $(STD) $(gnu) $(OMP) -O3 -I $(HPP) -o fbp_ga $(SRC)/fbp_ga.cpp
+
+fbp_val: $(SRC)/fbp_val.cpp
+	$(CXX) $(STD) $(gnu) $(OMP) -O3 -I $(HPP) -o fbp_ga $(SRC)/fbp_val.cpp
 
 .PHONY: clean
-clean: $(paper)
-	@$(remove) $(basename $<).blg 2> $(empty)
-	@$(remove) $(basename $<).log 2> $(empty)
-	@$(remove) $(basename $<).out 2> $(empty)
-	@$(remove) $(basename $<).fls 2> $(empty)
-	@$(remove) $(basename $<).synctex.gz 2> $(empty)
+clean: $(paper_out)
+	$(remove) $(tex_dir)$(sep)$(paper_out).blg 2> $(empty)
+	$(remove) $(tex_dir)$(sep)$(paper_out).log 2> $(empty)
+	$(remove) $(tex_dir)$(sep)$(paper_out).out 2> $(empty)
+	$(remove) $(tex_dir)$(sep)$(paper_out).fls 2> $(empty)
+	$(remove) $(tex_dir)$(sep)$(paper_out).synctex.gz 2> $(empty)
 
 .PHONY: cleanall
-cleanall: $(paper) clean
-	@$(remove) $(basename $<).aux 2> $(empty)
-	@$(remove) $(basename $<).bbl 2> $(empty)
-	@$(remove) $(basename $<).fdb_latexmk 2> $(empty)
+cleanall: $(paper_out) clean
+	@$(remove) $(tex_dir)$(sep)$(paper_out).aux 2> $(empty)
+	@$(remove) $(tex_dir)$(sep)$(paper_out).bbl 2> $(empty)
+	@$(remove) $(tex_dir)$(sep)$(paper_out).fdb_latexmk 2> $(empty)
