@@ -27,7 +27,7 @@ softwares:
 filename: 'FilterFile'
 
 K: '10'
-Nit: '100'
+Nit: '10'
 coil:
   - '122'
 n_input:
