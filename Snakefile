@@ -12,8 +12,8 @@ import platform # check system
 import datetime # date and time variables
 from contextlib import suppress # makedir with no error 
 from sklearn.model_selection import StratifiedKFold # RepeatedStratifiedKFold
-#from tpot import TPOTClassifier # genetic pipeline
-
+from tpot import TPOTClassifier # genetic pipeline
+from sklearn.metrics import accuracy_score, matthews_corrcoef # Score functions
 # plots of results
 import seaborn as sns # pretty/easy plots with pandas
 import matplotlib.pylab as plt # plots
@@ -55,6 +55,7 @@ nth_select      =   int(config["NTH_select"])
 nth_gen_fold    =   int(config["NTH_gen_folds"])
 nth_fbp_train   =   int(config["NTH_fbp_train"])
 nth_fbp_test    =   int(config["NTH_fbp_test"])
+nth_tpot    =   int(config["NTH_tpot"])
 
 lower_time      =    '05.59.59'
 upper_time      =    '22.00.01'
@@ -77,14 +78,10 @@ with(suppress(OSError)):
 
 rule all:
     input:
-        exe = fbp_train,
-        datafile = expand(os.path.join(local, db_dir, train_dir, "train_{coil}",
-                                        "{coil}_n_{n}_{fold}_{train}.csv"),
-                                        fold = list(map(str, range(Nit))),
-                                        train = list(map(str, range(K))),
-                                        coil = coils,
-                                        n = n_input,
-                                        )
+        results = expand(os.path.join(local, db_dir, "TPOTresults_{coil}_n_{n}.csv"),
+                         coil = coils,
+                         n = n_input
+                        ),
         #train    = expand(os.path.join(local, db_dir, train_dir, "train_{coil}",
         #                                "{coil}_n_{n}_{fold}_{train}.csv"),
         #                                 train=list(map(str, range(K))),
@@ -101,6 +98,7 @@ rule all:
         #                                 n=n_input,
         #                                 fold=list(map(str, range(Nit)))
         #                 ),
+
         #files    = expand([os.path.join(local, db_dir, db_name + "{coil}_n_{n}.weekdays"), os.path.join(local, db_dir, db_name + "{coil}_n_{n}.weekend")], coil=coils, n=n_input),
         #train_db = expand(os.path.join(local, db_dir, db_name + "{coil}_n_{n}.train"), coil = coils, n = n_input),
         #bin_db = expand(os.path.join(local, db_dir, db_name + "{coil}.binary"), coil=coils),
@@ -237,82 +235,51 @@ rule generate_fold:
         for train, test, (train_index, test_index) in zip(output.train, output.test, cv.split(np.zeros(len(lbl)), lbl)):
             tmp = db.iloc[train_index].dropna(how="all", axis=1)
             lbl_train = lbl[train_index]
-            with open(train, "w") as f:
+            with open(train, "a") as f:
                 f.write("%s\t%s\n"%('\t'.join(map(str, lbl_train[:-1])), str(lbl_train[-1])))
-                tmp.to_csv(train, sep="\t", header=False, index=False)
+                tmp.to_csv(f, sep="\t", header=False, index=False)
 
             tmp = db.iloc[test_index].dropna(how="all", axis=1)
             lbl_test = lbl[test_index]
-            with open(test, "w") as f:
+            with open(test, "a") as f:
                 f.write("%s\t%s\n"%('\t'.join(map(str, lbl_test[:-1])), str(lbl_test[-1])))
-                tmp.to_csv(test, sep="\t", header=False, index=False)
+                tmp.to_csv(f, sep="\t", header=False, index=False)
 
 
-rule run_fbp:
-    input: 
-        exe = fbp_train,
-        datafile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
-                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
-                                        fold = list(map(str, range(Nit))),
-                                        train = list(map(str, range(K)))
-                                        )
-    output:
-        parameters = os.path.join(local, param_dir, "params_{coil}_n_{n}.csv"),
-    benchmark:
-        os.path.join("benchmark", "benchmark_fbp_train_{coil}_{n}_{fold}_{train}.dat")
-    threads:
-        nth_fbp_train
-    message:
-        "FBP with GA for {wildcards.coil} : {wildcards.n} : {wildcards.fold} : {wildcards.train}"
-    run:
-        for file in input.datafile:
-            os.system(' '.join(["{input.exe}", 
-                                "-f", file, 
-                                "-o", "{output.parameters}", 
-                                "-k", "10", 
-                                "-r", "123", 
-                                "-i", str(max_iter), 
-                                "-n", str(n_population), 
-                                "-e", str(elit_rate), 
-                                "-m", str(mutation_rate)
-                                ])
-                        )
+#rule run_fbp:
+#    input: 
+#        exe = fbp_train,
+#        datafile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
+#                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+#                                        fold = list(map(str, range(Nit))),
+#                                        train = list(map(str, range(K)))
+#                                        )
+#    output:
+#        parameters = os.path.join(local, param_dir, "params_{coil}_n_{n}.csv"),
+#    benchmark:
+#        os.path.join("benchmark", "benchmark_fbp_train_{coil}_{n}_{fold}_{train}.dat")
+#    threads:
+#        nth_fbp_train
+#    message:
+#        "FBP with GA for {wildcards.coil} : {wildcards.n} : {wildcards.fold} : {wildcards.train}"
+#    run:
+#        for file in input.datafile:
+#            os.system(' '.join(["{input.exe}", 
+#                                "-f", file, 
+#                                "-o", "{output.parameters}", 
+#                                "-k", "10", 
+#                                "-r", "123", 
+#                                "-i", str(max_iter), 
+#                                "-n", str(n_population), 
+#                                "-e", str(elit_rate), 
+#                                "-m", str(mutation_rate)
+#                                ])
+#                        )
 
-rule validation:
-    input:
-        exe = fbp_test,
-        parameters = os.path.join(local, param_dir, "params_{coil}_n_{n}.csv"),
-        trainfile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
-                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
-                                        fold = list(map(str, range(Nit))),
-                                        train = list(map(str, range(K)))
-                                        ),
-        testfile = expand(os.path.join(local, db_dir, test_dir, "test_{{coil}}"
-                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
-                                        fold = list(map(str, range(Nit))),
-                                        train = list(map(str, range(K)))
-                                        ),
-    output:
-        results = os.path.join(local, db_dir, "FBPresults_{coil}_n_{n}.csv"),
-    benchmark:
-        os.path.join("benchmark", "benchmark_fbp_test_{coil}_{n}.dat")
-    threads:
-        nth_fbp_test
-    message:
-        "FBP validation for {wildcards.coil} : {wildcards.n}"
-    run:
-        for train, test in zip(input.trainfile, input.testfile):
-            os.system(' '.join(["{input.exe}", 
-                                "-f", train, 
-                                "-t", test,
-                                "-o", "{output.results}", 
-                                "-p", "{input.parameters}"
-                                ])
-                        )
-
-
-#rule tpot:
+#rule validation:
 #    input:
+#        exe = fbp_test,
+#        parameters = os.path.join(local, param_dir, "params_{coil}_n_{n}.csv"),
 #        trainfile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
 #                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
 #                                        fold = list(map(str, range(Nit))),
@@ -324,29 +291,64 @@ rule validation:
 #                                        train = list(map(str, range(K)))
 #                                        ),
 #    output:
-#        results = os.path.join(local, db_dir, "TPOTresults_{coil}_n_{n}.csv")
+#        results = os.path.join(local, db_dir, "FBPresults_{coil}_n_{n}.csv"),
 #    benchmark:
-#        os.path.join("benchmark", "benchmark_tpot_{coil}_{n}.dat")
+#        os.path.join("benchmark", "benchmark_fbp_test_{coil}_{n}.dat")
 #    threads:
-#        nth_tpot
+#        nth_fbp_test
 #    message:
-#        "TPOT pipeline for {wildcards.coil} : {wildcards.n}"
+#        "FBP validation for {wildcards.coil} : {wildcards.n}"
 #    run:
-#        tpot = TPOTClassifier(generations=max_iter, population_size=n_population, verbosity=0)
-#        with open(output.results, "w") as f:
-#            f.write("mcc\taccuracy")
-#            for train, test in zip(input.trainfile, input.testfile):
-#                train_data = pd.read_csv(train, sep=",", header=None)
-#                test_data = pd.read_csv(test, sep=",", header=None)
-#                train_lbl = list(train_data.columns)
-#                test_lbl = list(test_data.columns)
-#                tpot.fit(train_data, train_lbl)
-#                lbl_predict = tpot.predict(test_data)
-#                mcc = matthews_corrcoef(test_lbl, lbl_predict)
-#                acc = accuracy_score(test_lbl, lbl_predict, normalize=True)
-#                tpot.export(os.path.join(local, scripts, "tpot_" + test.split(os.sep)[-1].split(".")[0] + "_pipeline.py"))
-#
-#                f.write("%.3f\t%.3f\n"%(mcc, acc))
+#        for train, test in zip(input.trainfile, input.testfile):
+#            os.system(' '.join(["{input.exe}", 
+#                                "-f", train, 
+#                                "-t", test,
+#                                "-o", "{output.results}", 
+#                                "-p", "{input.parameters}"
+#                                ])
+#                        )
+
+
+rule tpot:
+    input:
+        trainfile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}",
+                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+                                        fold = list(map(str, range(Nit))),
+                                        train = list(map(str, range(K)))
+                                        ),
+        testfile = expand(os.path.join(local, db_dir, test_dir, "test_{{coil}}",
+                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+                                        fold = list(map(str, range(Nit))),
+                                        train = list(map(str, range(K)))
+                                        ),
+    output:
+        results = os.path.join(local, db_dir, "TPOTresults_{coil}_n_{n}.csv")
+    benchmark:
+        os.path.join("benchmark", "benchmark_tpot_{coil}_{n}.dat")
+    threads:
+        nth_tpot
+    message:
+        "TPOT pipeline for {wildcards.coil} : {wildcards.n}"
+    run:
+        tpot = TPOTClassifier(generations=max_iter, population_size=n_population, verbosity=2)
+        output_results = "Mcc_acc_res.txt"
+        with open(output_results, "w") as f:
+            f.write("mcc\taccuracy")
+        for train, test in zip(input.trainfile, input.testfile):
+            train_data = pd.read_csv(train, sep="\t")
+            test_data = pd.read_csv(test, sep="\t")
+            train_lbl = np.asarray(list(map(int, map(float, train_data.columns))))
+            test_lbl = np.asarray(list(map(int, map(float, test_data.columns))))
+            train_data = train_data.dropna(how="any", axis = 1)
+            test_data = test_data.dropna(how="any", axis = 1)
+            
+            tpot.fit(train_data.values, train_lbl)
+            lbl_predict = tpot.predict(test_data.values)
+            mcc = matthews_corrcoef(test_lbl, lbl_predict)
+            acc = accuracy_score(test_lbl, lbl_predict, normalize=True)
+            tpot.export(os.path.join("tpot_" + test.split(os.sep)[-1].split(".")[0] + "_pipeline.py"))
+
+            f.write("%.3f\t%.3f\n"%(mcc, acc))
 
 
 rule boxplots:

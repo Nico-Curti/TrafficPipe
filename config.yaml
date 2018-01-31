@@ -7,6 +7,7 @@ NTH_select: '1'
 NTH_gen_folds: '1'
 NTH_fbp_train: '1'
 NTH_fbp_test: '1'
+NTH_tpot: '1'
 
 folders:
   scripts: 'python'
