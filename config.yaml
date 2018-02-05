@@ -17,8 +17,8 @@ folders:
   plot: '/tex/img'
   data: 'db'
 
-max_iter: '1000'
-n_population: '100'
+max_iter: '10'
+n_population: '5'
 elit_rate: '.3'
 mutation_rate: '.5'
 
@@ -34,6 +34,5 @@ coil:
 n_input:
   - '151'
   - '201'
-  #- '101'
-  #- '251'
-  #- '301'
+  - '251'
+  - '301'

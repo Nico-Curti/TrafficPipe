@@ -246,35 +246,35 @@ rule generate_fold:
                 tmp.to_csv(f, sep="\t", header=False, index=False)
 
 
-#rule run_fbp:
-#    input: 
-#        exe = fbp_train,
-#        datafile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
-#                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
-#                                        fold = list(map(str, range(Nit))),
-#                                        train = list(map(str, range(K)))
-#                                        )
-#    output:
-#        parameters = os.path.join(local, param_dir, "params_{coil}_n_{n}.csv"),
-#    benchmark:
-#        os.path.join("benchmark", "benchmark_fbp_train_{coil}_{n}_{fold}_{train}.dat")
-#    threads:
-#        nth_fbp_train
-#    message:
-#        "FBP with GA for {wildcards.coil} : {wildcards.n} : {wildcards.fold} : {wildcards.train}"
-#    run:
-#        for file in input.datafile:
-#            os.system(' '.join(["{input.exe}", 
-#                                "-f", file, 
-#                                "-o", "{output.parameters}", 
-#                                "-k", "10", 
-#                                "-r", "123", 
-#                                "-i", str(max_iter), 
-#                                "-n", str(n_population), 
-#                                "-e", str(elit_rate), 
-#                                "-m", str(mutation_rate)
-#                                ])
-#                        )
+rule run_fbp:
+    input: 
+        exe = fbp_train,
+        datafile = expand(os.path.join(local, db_dir, train_dir, "train_{{coil}}"
+                                        "{{coil}}_n_{{n}}_{fold}_{train}.csv"),
+                                        fold = list(map(str, range(Nit))),
+                                        train = list(map(str, range(K)))
+                                        )
+    output:
+        parameters = os.path.join(local, param_dir, "params_{coil}_n_{n}.csv"),
+    benchmark:
+        os.path.join("benchmark", "benchmark_fbp_train_{coil}_{n}_{fold}_{train}.dat")
+    threads:
+        nth_fbp_train
+    message:
+        "FBP with GA for {wildcards.coil} : {wildcards.n} : {wildcards.fold} : {wildcards.train}"
+    run:
+        for file in input.datafile:
+            os.system(' '.join(["{input.exe}", 
+                                "-f", file, 
+                                "-o", "{output.parameters}", 
+                                "-k", "10", 
+                                "-r", "123", 
+                                "-i", str(max_iter), 
+                                "-n", str(n_population), 
+                                "-e", str(elit_rate), 
+                                "-m", str(mutation_rate)
+                                ])
+                        )
 
 #rule validation:
 #    input:
@@ -331,24 +331,25 @@ rule tpot:
         "TPOT pipeline for {wildcards.coil} : {wildcards.n}"
     run:
         tpot = TPOTClassifier(generations=max_iter, population_size=n_population, verbosity=2)
-        output_results = "Mcc_acc_res.txt"
-        with open(output_results, "w") as f:
-            f.write("mcc\taccuracy")
-        for train, test in zip(input.trainfile, input.testfile):
-            train_data = pd.read_csv(train, sep="\t")
-            test_data = pd.read_csv(test, sep="\t")
-            train_lbl = np.asarray(list(map(int, map(float, train_data.columns))))
-            test_lbl = np.asarray(list(map(int, map(float, test_data.columns))))
-            train_data = train_data.dropna(how="any", axis = 1)
-            test_data = test_data.dropna(how="any", axis = 1)
-            
-            tpot.fit(train_data.values, train_lbl)
-            lbl_predict = tpot.predict(test_data.values)
-            mcc = matthews_corrcoef(test_lbl, lbl_predict)
-            acc = accuracy_score(test_lbl, lbl_predict, normalize=True)
-            tpot.export(os.path.join("tpot_" + test.split(os.sep)[-1].split(".")[0] + "_pipeline.py"))
+        with open(output.results, "w") as f:
+            f.write("mcc\taccuracy\n")
+            for train, test in zip(input.trainfile, input.testfile):
+                print("trainfile : ", train)
+                print("testfile : ", test)
+                train_data = pd.read_csv(train, sep="\t")
+                test_data = pd.read_csv(test, sep="\t")
+                train_lbl = np.asarray(list(map(int, map(float, train_data.columns))))
+                test_lbl = np.asarray(list(map(int, map(float, test_data.columns))))
+                train_data = train_data.dropna(how="any", axis = 1)
+                test_data = test_data.dropna(how="any", axis = 1)
+                
+                tpot.fit(train_data.values, train_lbl)
+                lbl_predict = tpot.predict(test_data.values)
+                mcc = matthews_corrcoef(test_lbl, lbl_predict)
+                acc = accuracy_score(test_lbl, lbl_predict, normalize=True)
+                tpot.export(os.path.join(local, scripts, "tpot_" + test.split(os.sep)[-1].split(".")[0] + "_pipeline.py"))
 
-            f.write("%.3f\t%.3f\n"%(mcc, acc))
+                f.write("%.3f\t%.3f\n"%(mcc, acc))
 
 
 rule boxplots:
@@ -370,7 +371,7 @@ rule boxplots:
 
         fig, ax = plt.subplots(figsize=(16,8))
         plt.subplots_adjust(left=0.15, right=0.9, top=0.8,  bottom=0.2)
-        sns.boxplot( x = "cancer", 
+        sns.boxplot( x = "coil", 
                      y = "mcc", 
                      hue = "dtype",
                      data = db, 
