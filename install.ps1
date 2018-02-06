@@ -6,7 +6,7 @@ $cmake_version = "3.10.1"
 $ninja_version = "1.8.2"
 $Documents = [Environment]::GetFolderPath('MyDocuments')
 
-Write-Host "Installing Data-Analysis dependecies:" -ForegroundColor Yellow
+Write-Host "Installing TrafficPipe dependecies:" -ForegroundColor Yellow
 Write-Host "  - cmake"
 . ".\shell_utils\pwsh\install_cmake.ps1"
 Write-Host "  - (Conda)Python3 and snakemake"
@@ -169,6 +169,6 @@ Else{ Write-Host "FOUND" -ForegroundColor Green}
 
 Pop-Location  > $null
 
-Write-Host "Build Data-Analysis" -ForegroundColor Yellow
+Write-Host "Build Traffic Pipeline" -ForegroundColor Yellow
 & .\build.ps1
 
